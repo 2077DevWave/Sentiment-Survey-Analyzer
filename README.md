@@ -71,7 +71,7 @@ print(result)
 ## 📊 Performance
 Dataset Size	Accuracy
 150K (Quera)	60%
-450K (Combined)	75%
++1000K (Combined)	75%
 
 ---
 
