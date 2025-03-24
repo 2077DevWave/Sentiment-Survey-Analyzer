@@ -38,7 +38,10 @@ train_data = pd.read_csv('big_train.csv', usecols=['body', 'recommendation_statu
 This combined dataset merges samples from both Quera and Kaggle sources.
 > Due to the large size of the `big_train.csv` file, I've split it into 12 RAR parts. To obtain the complete file, you only need to extract one of the parts.
 
-Hardware Specifications
+A set of comments is provided in the comments.csv file which can be used as input for the model.
+
+
+## Hardware Specifications
 The project was executed on hardware with:
 
 - 2 vCPU cores
