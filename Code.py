@@ -4,21 +4,28 @@ import re
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
+import gc
+import torch
+from numba import cuda
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Embedding, LSTM, Bidirectional
+from tensorflow.keras.layers import Embedding, LSTM, Bidirectional, Dense, Dropout
+from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from hazm import Normalizer, word_tokenize, Stemmer, stopwords_list
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
+from multiprocessing import Pool, cpu_count
 
 # Check for GPU
 print("Num GPUs Available:", len(tf.config.experimental.list_physical_devices('GPU')))
 
-# Load the Dataset
-train_data = pd.read_csv('train.csv') 
-test_data = pd.read_csv('test.csv')
+# Load Dataset
+train_data = pd.read_csv('big_train.csv', usecols=['body', 'recommendation_status'])
+# train_data = pd.read_csv('Dataset/train.csv')
+test_data = pd.read_csv('Dataset/test.csv')
 
 # Data Exploration
 train_data.info()
@@ -39,19 +46,28 @@ stopwords = set(stopwords_list())
 normalizer = Normalizer()
 stemmer = Stemmer()
 
-punctuations = r'[!()-\[\]{};:\'",؟<>./?@#$%^&*_~]'
-numbers_regex = r'[۰-۹\d]+'
-white_space = r'\s+'
+# Precompile regex patterns for efficiency
+digit_pattern = re.compile(r'[۰-۹\d]+')
+punctuation_pattern = re.compile(r'[!()\[\]{};:\'",؟<>./?@#$%^&*_~]')
+whitespace_pattern = re.compile(r'\s+')
 
 def preprocess_text(text):
     text = normalizer.normalize(str(text))
-    text = re.sub(r'[۰-۹\d]+', '', text)
-    text = re.sub(r'[!()-\[\]{};:\'",؟<>./?@#$%^&*_~]', ' ', text)
-    text = re.sub(r'\s+', ' ', text).strip()
+    text = digit_pattern.sub('', text)
+    text = punctuation_pattern.sub(' ', text)
+    text = whitespace_pattern.sub(' ', text).strip()
+    
     tokens = word_tokenize(text)
     return [stemmer.stem(token) for token in tokens if token not in stopwords and token.strip()]
 
-train_data['preprocess'] = train_data['body'].apply(preprocess_text)
+# Use multiprocessing to parallelize text preprocessing
+def parallel_preprocessing(data):
+    with Pool(cpu_count()) as pool:
+        return pool.map(preprocess_text, data)
+
+# Apply the function in parallel
+train_data['preprocess'] = parallel_preprocessing(train_data['body'].tolist())
+
 
 # Tokenization and Padding
 tokenizer = Tokenizer()
@@ -66,17 +82,24 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_
 
 # Define LSTM Model
 model = Sequential([
-    Embedding(input_dim=len(tokenizer.word_index) + 1, output_dim=128, input_length=max_len),
-    Bidirectional(LSTM(128, return_sequences=True)),
-    Bidirectional(LSTM(64)),
-    Dense(64, activation='relu'),
-    Dense(3, activation='softmax')
+    Embedding(input_dim=len(tokenizer.word_index) + 1, output_dim=512),  # Using smaller dimensions for embedding
+    Bidirectional(LSTM(128, return_sequences=True)),  # Bidirectional LSTM layer with 128 neurons
+    Dropout(0.2),  # Dropout layer to prevent overfitting
+    Bidirectional(LSTM(64)),  # Bidirectional LSTM layer with 64 neurons
+    Dropout(0.2),  # Dropout layer
+    Dense(64, activation='relu'),  # Fully Connected layer with 64 neurons and ReLU activation function
+    Dense(3, activation='softmax')  # Output layer with 3 classes and Softmax activation function
 ])
 
-model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+# Compile the model
+model.compile(loss='sparse_categorical_crossentropy', optimizer=Adam(), metrics=['accuracy'])
 
 # Train Model with GPU
-model.fit(X_train, y_train, epochs=10, batch_size=128, validation_data=(X_test, y_test), verbose=1)
+early_stopping = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
+model_checkpoint = ModelCheckpoint('best_model.h5', monitor='val_loss', save_best_only=True)
+
+model.fit(X_train, y_train, batch_size=1024, epochs=10, validation_data=(X_test, y_test), 
+          callbacks=[early_stopping, model_checkpoint])
 
 # Evaluate Model
 loss, accuracy = model.evaluate(X_test, y_test)
