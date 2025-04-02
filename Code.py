@@ -183,7 +183,7 @@ def predict_sentiments_for_file(input_file, output_file, summary_file, model_acc
     except Exception as e:
         print(f"Error saving results: {e}")
 
-input_csv = 'comments.csv'
+input_csv = 'Dataset/comments.csv'
 output_csv = 'sentiment_results.csv'
 summary_csv = 'sentiment_summary.csv'
 
