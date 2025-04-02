@@ -41,14 +41,52 @@ This combined dataset merges samples from both Quera and Kaggle sources.
 A set of comments is provided in the comments.csv file which can be used as input for the model.
 
 
+Here’s the translated section of the readme:
+
+## Downloading the `big_train` dataset from Hugging Face
+
+To download the **big_train** dataset from Hugging Face, you can use the **curl** or **wget** tools. This dataset contains Persian commercial comments and is available as a **CSV** file.
+
+### **Method 1: Using curl**
+```bash
+curl -L -o big_train.csv "https://huggingface.co/datasets/2077devwave/persian_commercial_comments_filing/resolve/main/train.csv"
+```
+This command will save the file as `train.csv` in the current directory.
+
+### **Method 2: Using wget**
+```bash
+wget -O big_train.csv "https://huggingface.co/datasets/2077devwave/persian_commercial_comments_filing/resolve/main/train.csv"
+```
+If `wget` is not installed on your system, you can install it with the following command:
+```bash
+sudo apt install wget  # For Ubuntu and Debian
+brew install wget  # For macOS
+```
+
+### **Method 3: Download with Python**
+You can use the `requests` library in Python:
+```python
+import requests
+
+url = "https://huggingface.co/datasets/2077devwave/persian_commercial_comments_filing/resolve/main/train.csv"
+response = requests.get(url)
+
+with open("big_train.csv", "wb") as file:
+    file.write(response.content)
+
+print("Download completed!")
+```
+With these methods, you can easily download and use the **big_train** dataset.
+
 ## Hardware Specifications
-The project was executed on hardware with:
 
-- 2 vCPU cores
+This project was executed on hardware with the following specifications:
 
-- 5GB RAM
+- 5 vCPU cores
+- 12 GB RAM
+- 15 GB GPU
 
-  If you encounter issues with library installation or hardware requirements, you can use [DeepNote](deepnote.com) as an alternative platform.
+If you face any issues with library installation or hardware requirements, you can use [Google Collab](https://colab.research.google.com/drive/1_cQ18n2YQE0Dnm1rrBN48Zm0egTgc_Xh?usp=sharing) as an alternative platform.
 
 ## 🛠️ Installation
 
