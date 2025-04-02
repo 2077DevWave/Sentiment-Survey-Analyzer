@@ -39,6 +39,43 @@ train_data = pd.read_csv('big_train.csv', usecols=['body', 'recommendation_statu
 
 یک مجموعه نظرات در فایل comments.csv قرار داده شده که میتوان از آن برای ورودی مدل استفاده کرد
 
+## دانلود دیتاست big_train از Hugging Face
+
+برای دانلود دیتاست **big_train** از Hugging Face می‌توانید از ابزار **curl** یا **wget** استفاده کنید. این دیتاست شامل نظرات تجاری فارسی بوده و به‌صورت فایل **CSV** در دسترس است.
+
+### **روش اول: استفاده از curl**
+```bash
+curl -L -o big_train.csv "https://huggingface.co/datasets/2077devwave/persian_commercial_comments_filing/resolve/main/train.csv"
+```
+این دستور فایل را با نام `train.csv` در مسیر فعلی ذخیره می‌کند.
+
+### **روش دوم: استفاده از wget**
+```bash
+wget -O big_train.csv "https://huggingface.co/datasets/2077devwave/persian_commercial_comments_filing/resolve/main/train.csv"
+```
+اگر `wget` در سیستم شما نصب نیست، می‌توانید آن را با دستور زیر نصب کنید:
+```bash
+sudo apt install wget  # برای اوبونتو و دبیان
+brew install wget  # برای macOS
+```
+
+### **روش سوم: دانلود با پایتون**
+می‌توانید از کتابخانه `requests` در پایتون استفاده کنید:
+```python
+import requests
+
+url = "https://huggingface.co/datasets/2077devwave/persian_commercial_comments_filing/resolve/main/train.csv"
+response = requests.get(url)
+
+with open("big_train.csv", "wb") as file:
+    file.write(response.content)
+
+print("دانلود کامل شد!")
+```
+با این روش‌ها می‌توانید دیتاست **big_train** را به‌راحتی دانلود و استفاده کنید.
+
+
+
 ## مشخصات سخت افزاری 
 
 این پروژه بر روی سخت افزار با موارد زیر اجرا شد:
