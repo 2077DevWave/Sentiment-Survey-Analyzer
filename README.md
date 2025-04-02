@@ -83,7 +83,7 @@ This project was executed on hardware with the following specifications:
 - 12 GB RAM
 - 15 GB GPU
 
-If you face any issues with library installation or hardware requirements, you can use [Google Collab](https://colab.research.google.com/drive/1_cQ18n2YQE0Dnm1rrBN48Zm0egTgc_Xh?usp=sharing) as an alternative platform.
+If you face any issues with library installation or hardware requirements, you can use [Google Collab](https://colab.research.google.com/github/2077DevWave/Sentiment-Survey-Analyzer/blob/main/NoteBooks/comment_analyzer.ipynb) as an alternative platform.
 
 ## 🛠️ Installation
 
