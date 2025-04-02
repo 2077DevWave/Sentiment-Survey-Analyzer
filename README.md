@@ -40,9 +40,6 @@ This combined dataset merges samples from both Quera and Kaggle sources.
 
 A set of comments is provided in the comments.csv file which can be used as input for the model.
 
-
-Here’s the translated section of the readme:
-
 ## Downloading the `big_train` dataset from Hugging Face
 
 To download the **big_train** dataset from Hugging Face, you can use the **curl** or **wget** tools. This dataset contains Persian commercial comments and is available as a **CSV** file.
