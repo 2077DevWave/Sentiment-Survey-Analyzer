@@ -1,17 +1,31 @@
 # Import Required Libraries
 import pandas as pd
-from hazm import Normalizer, word_tokenize, Stemmer, stopwords_list
 import re
-from tqdm import tqdm
-from gensim.models import Word2Vec
 import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+import gc
+import torch
+from numba import cuda
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Embedding, LSTM, Bidirectional, Dense, Dropout
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
+from hazm import Normalizer, word_tokenize, Stemmer, stopwords_list
+from tqdm import tqdm
 from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
+from multiprocessing import Pool, cpu_count
 
-# Load the Dataset
-train_data = pd.read_csv('train.csv') 
-test_data = pd.read_csv('test.csv')
+# Check for GPU
+print("Num GPUs Available:", len(tf.config.experimental.list_physical_devices('GPU')))
+
+# Load Dataset
+train_data = pd.read_csv('big_train.csv', usecols=['body', 'recommendation_status'])
+# train_data = pd.read_csv('Dataset/train.csv')
+test_data = pd.read_csv('Dataset/test.csv')
 
 # Data Exploration
 train_data.info()
@@ -19,18 +33,9 @@ test_data.info()
 train_data['recommendation_status'].value_counts()
 
 # Handle Missing Values and Encode Labels
-train_data["recommendation_status"] = train_data["recommendation_status"].fillna("no_idea")
-
-valid_statuses = {"no_idea", "recommended", "not_recommended"}
-train_data["recommendation_status"] = train_data["recommendation_status"].apply(
-    lambda x: x if x in valid_statuses else "no_idea"
-)
-
-train_data["recommendation_status"] = train_data["recommendation_status"].map({
-    "no_idea": 2,
-    "recommended": 1,
-    "not_recommended": 0
-})
+train_data['recommendation_status'] = train_data['recommendation_status'].fillna("no_idea")
+label_map = {"no_idea": 2, "recommended": 1, "not_recommended": 0}
+train_data['recommendation_status'] = train_data['recommendation_status'].map(label_map)
 
 # Verify preprocessing
 train_data["recommendation_status"].unique()
@@ -41,98 +46,76 @@ stopwords = set(stopwords_list())
 normalizer = Normalizer()
 stemmer = Stemmer()
 
-punctuations = r'[!()-\[\]{};:\'",؟<>./?@#$%^&*_~]'
-numbers_regex = r'[۰-۹\d]+'
-white_space = r'\s+'
+# Precompile regex patterns for efficiency
+digit_pattern = re.compile(r'[۰-۹\d]+')
+punctuation_pattern = re.compile(r'[!()\[\]{};:\'",؟<>./?@#$%^&*_~]')
+whitespace_pattern = re.compile(r'\s+')
 
 def preprocess_text(text):
     text = normalizer.normalize(str(text))
-    text = re.sub(numbers_regex, '', text)
-    text = re.sub(punctuations, ' ', text)
-    text = re.sub(white_space, ' ', text).strip()
+    text = digit_pattern.sub('', text)
+    text = punctuation_pattern.sub(' ', text)
+    text = whitespace_pattern.sub(' ', text).strip()
     
     tokens = word_tokenize(text)
-    processed_tokens = [
-        stemmer.stem(token)
-        for token in tokens
-        if token not in stopwords and token.strip()
-    ]
-    
-    return processed_tokens
+    return [stemmer.stem(token) for token in tokens if token not in stopwords and token.strip()]
 
-# Test preprocessing function
-exmpale = "من متولد سال ۱۳۷۷ هستم"
-preprocess_text(exmpale)
+# Use multiprocessing to parallelize text preprocessing
+def parallel_preprocessing(data):
+    with Pool(cpu_count()) as pool:
+        return pool.map(preprocess_text, data)
 
-# Apply preprocessing to all data
-dataes = train_data['body']
+# Apply the function in parallel
+train_data['preprocess'] = parallel_preprocessing(train_data['body'].tolist())
 
-def process_chunks(series, chunk_size=1000):
-    chunks = [series[i:i + chunk_size] for i in range(0, len(series), chunk_size)]
-    processed_data = []
-    
-    for chunk in tqdm(chunks, desc="Processing chunks"):
-        processed_chunk = chunk.apply(preprocess_text)
-        processed_data.extend(processed_chunk)
-    
-    return pd.Series(processed_data)
 
-data_processed = process_chunks(dataes)
-train_data["preprocess"] = data_processed
-train_data.head()
+# Tokenization and Padding
+tokenizer = Tokenizer()
+tokenizer.fit_on_texts(train_data['preprocess'])
+sequences = tokenizer.texts_to_sequences(train_data['preprocess'])
+max_len = max(map(len, sequences))
+X = pad_sequences(sequences, maxlen=max_len, padding='post')
+y = train_data['recommendation_status'].values
 
-# Word2Vec Embedding
-model = Word2Vec(sentences=train_data["preprocess"], vector_size=100, window=5, min_count=1, workers=4)
-
-# Test Word2Vec
-model.wv.most_similar("دوست")
-
-# Sentence Vectorization
-def sentence_vector(sentence):
-    vectors = []
-    for word in sentence:
-        try:
-            vectors.append(model.wv[word])
-        except KeyError:
-            vectors.append(np.zeros(100))
-    if vectors:
-        return np.mean(vectors, axis=0)
-    else:
-        return np.zeros(100)
-
-sentence_vectors = train_data['preprocess'].apply(sentence_vector)
-sentence_vectors
-
-# Prepare Data for Model
-X = np.array(sentence_vectors.to_list())
-y = train_data["recommendation_status"].values
+# Split Data
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# Train Logistic Regression
-logistic_model = LogisticRegression(max_iter=1000)
-logistic_model.fit(X_train, y_train)
+# Define LSTM Model
+model = Sequential([
+    Embedding(input_dim=len(tokenizer.word_index) + 1, output_dim=512),  # Using smaller dimensions for embedding
+    Bidirectional(LSTM(128, return_sequences=True)),  # Bidirectional LSTM layer with 128 neurons
+    Dropout(0.2),  # Dropout layer to prevent overfitting
+    Bidirectional(LSTM(64)),  # Bidirectional LSTM layer with 64 neurons
+    Dropout(0.2),  # Dropout layer
+    Dense(64, activation='relu'),  # Fully Connected layer with 64 neurons and ReLU activation function
+    Dense(3, activation='softmax')  # Output layer with 3 classes and Softmax activation function
+])
+
+# Compile the model
+model.compile(loss='sparse_categorical_crossentropy', optimizer=Adam(), metrics=['accuracy'])
+
+# Train Model with GPU
+early_stopping = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
+model_checkpoint = ModelCheckpoint('best_model.h5', monitor='val_loss', save_best_only=True)
+
+model.fit(X_train, y_train, batch_size=1024, epochs=10, validation_data=(X_test, y_test), 
+          callbacks=[early_stopping, model_checkpoint])
 
 # Evaluate Model
-y_pred = logistic_model.predict(X_test)
-accuracy = accuracy_score(y_test, y_pred)
+loss, accuracy = model.evaluate(X_test, y_test)
 print(f"Accuracy: {accuracy}")
 
 # Prediction Function
 def predict_recommendation(comment):
     preprocessed_comment = preprocess_text(comment)
-    sentence_vector_comment = sentence_vector(preprocessed_comment)
-    X_comment = np.array([sentence_vector_comment])
-    prediction = logistic_model.predict(X_comment)
-    if prediction[0] == 2:
-        return "no_idea"
-    elif prediction[0] == 1:
-        return "recommended"
-    else:
-        return "not_recommended"
+    seq = tokenizer.texts_to_sequences([preprocessed_comment])
+    padded_seq = pad_sequences(seq, maxlen=max_len, padding='post')
+    prediction = model.predict(padded_seq)
+    return {v: k for k, v in label_map.items()}[np.argmax(prediction)]
 
 # Test Prediction
-new_comment = 'نمیدونم'
-predict_recommendation(new_comment)
+print(predict_recommendation("نمیدونم"))
+
 
 def predict_sentiments_for_file(input_file, output_file, summary_file, model_accuracy=None):
     try:
@@ -200,7 +183,7 @@ def predict_sentiments_for_file(input_file, output_file, summary_file, model_acc
     except Exception as e:
         print(f"Error saving results: {e}")
 
-input_csv = 'comments.csv'
+input_csv = 'Dataset/comments.csv'
 output_csv = 'sentiment_results.csv'
 summary_csv = 'sentiment_summary.csv'
 
